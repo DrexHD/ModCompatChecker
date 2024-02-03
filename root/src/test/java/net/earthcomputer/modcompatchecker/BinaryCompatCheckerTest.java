@@ -31,6 +31,7 @@ public class BinaryCompatCheckerTest {
         fixture.register("testMod/TestThrowsInaccessible", Errors.METHOD_THROWS_TYPE_INACCESSIBLE);
         fixture.register("testMod/TestDiamondProblem", Errors.DIAMOND_PROBLEM);
         fixture.register("testMod/TestDiamondProblemOk");
+        fixture.register("testMod/TestEnum");
         fixture.register("testMod/TestAbstractMethodUnimplemented", Errors.ABSTRACT_METHOD_UNIMPLEMENTED);
         fixture.register("testMod/TestIAbstractMethodUnimplemented", Errors.ABSTRACT_METHOD_UNIMPLEMENTED);
         fixture.register("testMod/TestAbstractMethodImplemented");
