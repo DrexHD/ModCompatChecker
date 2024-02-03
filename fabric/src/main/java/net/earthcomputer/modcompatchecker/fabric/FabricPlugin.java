@@ -6,17 +6,16 @@ import net.earthcomputer.modcompatchecker.indexer.Index;
 import net.earthcomputer.modcompatchecker.indexer.Indexer;
 import net.earthcomputer.modcompatchecker.util.ThreeState;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.zip.ZipOutputStream;
 
 public class FabricPlugin implements Plugin {
     private final Set<String> entrypointClasses = new HashSet<>();
@@ -48,10 +47,8 @@ public class FabricPlugin implements Plugin {
                 return;
             }
             if (checkEntryPoints) {
-                for (List<String> entrypointCategory : modJson.entrypoints().values()) {
-                    for (String entrypoint : entrypointCategory) {
-                        entrypointClasses.add(entrypoint.replace('.', '/'));
-                    }
+                for (String entrypoint : modJson.entrypoints()) {
+                    entrypointClasses.add(entrypoint.replace('.', '/'));
                 }
             }
             for (String jarEntry : modJson.jars()) {

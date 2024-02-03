@@ -1,19 +1,22 @@
 package net.earthcomputer.modcompatchecker.fabric;
 
-import com.google.gson.JsonSyntaxException;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
+import com.google.gson.*;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-record FabricModJson(Map<String, List<String>> entrypoints, @Nullable String accessWidener, List<String> jars) {
+record FabricModJson(List<String> entrypoints, @Nullable String accessWidener, List<String> jars) {
+    private static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(FabricModJson.class, new FabricModJsonDeserializer())
+        .create();
 
     @Nullable
     public static FabricModJson load(JarFile modJar) throws IOException {
@@ -21,162 +24,61 @@ record FabricModJson(Map<String, List<String>> entrypoints, @Nullable String acc
         if (modJsonEntry == null) {
             return null;
         }
+        FabricModJson fabricModJson;
         try (Reader reader = new InputStreamReader(modJar.getInputStream(modJsonEntry), StandardCharsets.UTF_8)) {
-            JsonReader jsonReader = new JsonReader(reader);
-            jsonReader.beginObject();
-            return parse(jsonReader);
+            fabricModJson = GSON.fromJson(reader, FabricModJson.class);
+        } catch (JsonParseException e) {
+            throw new IOException("Failed to parse fabric.mod.json", e);
         }
+        return fabricModJson;
     }
 
-    // TODO License
-    // https://github.com/FabricMC/fabric-loader/blob/master/src/main/java/net/fabricmc/loader/impl/metadata/V1ModMetadataParser.java
-    static FabricModJson parse(JsonReader reader) throws IOException {
-        Map<String, List<String>> entrypoints = new HashMap<>();
-        List<String> jars = new ArrayList<>();
-        String accessWidener = null;
-        while (reader.hasNext()) {
-            final String key = reader.nextName();
-
-            switch (key) {
-                case "schemaVersion":
-                    if (reader.peek() != JsonToken.NUMBER) {
-                        throw new JsonSyntaxException("Duplicate \"schemaVersion\" field is not a number");
-                    }
-
-                    final int read = reader.nextInt();
-
-                    if (read != 1) {
-                        throw new JsonSyntaxException(String.format("Duplicate \"schemaVersion\" field does not match the predicted schema version of 1. Duplicate field value is %s", read));
-                    }
-
-                    break;
-                case "entrypoints":
-                    readEntrypoints(reader, entrypoints);
-                    break;
-                case "jars":
-                    readNestedJarEntries(reader, jars);
-                    break;
-                case "accessWidener":
-                    if (reader.peek() != JsonToken.STRING) {
-                        throw new JsonSyntaxException("Access Widener file must be a string");
-                    }
-
-                    accessWidener = reader.nextString();
-                    break;
-                default:
-                    reader.skipValue();
-                    break;
+    private static class FabricModJsonDeserializer implements JsonDeserializer<FabricModJson> {
+        @Override
+        public FabricModJson deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            // Throws IllegalStateException or ClassCastException if the file is formatted incorrect
+            JsonObject root = json.getAsJsonObject();
+            JsonElement schemaVersionJson = root.get("schemaVersion");
+            if (schemaVersionJson == null || schemaVersionJson.getAsInt() != 1) {
+                throw new IllegalStateException("Schema version 1 is currently the only supported format");
             }
-        }
-        return new FabricModJson(entrypoints, accessWidener, jars);
-    }
+            String accessWidener = null;
+            List<String> entrypoints = new LinkedList<>();
+            List<String> jars = new LinkedList<>();
 
-    private static void readEntrypoints(JsonReader reader, Map<String, List<String>> entrypoints) throws IOException {
-        // Entrypoints must be an object
-        if (reader.peek() != JsonToken.BEGIN_OBJECT) {
-            throw new JsonSyntaxException("Entrypoints must be an object");
-        }
-
-        reader.beginObject();
-
-        while (reader.hasNext()) {
-            final String key = reader.nextName();
-
-            List<String> metadata = new ArrayList<>();
-
-            if (reader.peek() != JsonToken.BEGIN_ARRAY) {
-                throw new JsonSyntaxException("Entrypoint list must be an array!");
+            JsonElement accessWidenerJson = root.get("accessWidener");
+            if (accessWidenerJson != null) {
+                accessWidener = accessWidenerJson.getAsString();
             }
 
-            reader.beginArray();
-
-            while (reader.hasNext()) {
-                String adapter = "default";
-                String value = null;
-
-                // Entrypoints may be specified directly as a string or as an object to allow specification of the language adapter to use.
-                switch (reader.peek()) {
-                    case STRING:
-                        value = reader.nextString();
-                        break;
-                    case BEGIN_OBJECT:
-                        reader.beginObject();
-
-                        while (reader.hasNext()) {
-                            final String entryKey = reader.nextName();
-                            switch (entryKey) {
-                                case "adapter":
-                                    adapter = reader.nextString();
-                                    break;
-                                case "value":
-                                    value = reader.nextString();
-                                    break;
-                                default:
-                                    reader.skipValue();
-                                    break;
-                            }
+            JsonObject entrypointsJson = root.getAsJsonObject("entrypoints");
+            if (entrypointsJson != null) {
+                for (String key : entrypointsJson.keySet()) {
+                    JsonArray jsonArray = entrypointsJson.getAsJsonArray(key);
+                    for (JsonElement entrypointJson : jsonArray) {
+                        if (entrypointJson.isJsonPrimitive()) {
+                            entrypoints.add(entrypointJson.getAsString());
+                        } else {
+                            JsonObject entrypointJsonObject = entrypointJson.getAsJsonObject();
+                            // required field
+                            JsonElement value = entrypointJsonObject.get("value");
+                            entrypoints.add(value.getAsString());
                         }
-
-                        reader.endObject();
-                        break;
-                    default:
-                        throw new JsonSyntaxException("Entrypoint must be a string or object with \"value\" field");
-                }
-
-                if (value == null) {
-                    throw new JsonSyntaxException("Entrypoint value must be present");
-                }
-
-                metadata.add(value);
-            }
-
-            reader.endArray();
-
-            // Empty arrays are acceptable, do not check if the List of metadata is empty
-            entrypoints.put(key, metadata);
-        }
-
-        reader.endObject();
-    }
-
-    private static void readNestedJarEntries(JsonReader reader, List<String> jars) throws IOException {
-        if (reader.peek() != JsonToken.BEGIN_ARRAY) {
-            throw new JsonSyntaxException("Jar entries must be in an array");
-        }
-
-        reader.beginArray();
-
-        while (reader.hasNext()) {
-            if (reader.peek() != JsonToken.BEGIN_OBJECT) {
-                throw new JsonSyntaxException("Invalid type for JAR entry!");
-            }
-
-            reader.beginObject();
-            String file = null;
-
-            while (reader.hasNext()) {
-                final String key = reader.nextName();
-
-                if (key.equals("file")) {
-                    if (reader.peek() != JsonToken.STRING) {
-                        throw new JsonSyntaxException("\"file\" entry in jar object must be a string");
                     }
-
-                    file = reader.nextString();
-                } else {
-                    reader.skipValue();
                 }
             }
 
-            reader.endObject();
-
-            if (file == null) {
-                throw new JsonSyntaxException("Missing mandatory key 'file' in JAR entry!");
+            JsonArray jarsJson = root.getAsJsonArray("jars");
+            if (jarsJson != null) {
+                for (JsonElement jarJson : jarsJson) {
+                    JsonObject jarJsonObject = jarJson.getAsJsonObject();
+                    JsonElement fileJson = jarJsonObject.get("file");
+                    if (fileJson != null) {
+                        jars.add(fileJson.getAsString());
+                    }
+                }
             }
-
-            jars.add(file);
+            return new FabricModJson(entrypoints, accessWidener, jars);
         }
-
-        reader.endArray();
     }
 }
