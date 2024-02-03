@@ -68,6 +68,7 @@ public final class Main {
         if (options.has(checkOption)) {
             checkMods(checkOption.values(options), libraryOption.values(options), config);
         }
+        System.exit(0);
     }
 
     private static void printHelp(OptionParser parser) {

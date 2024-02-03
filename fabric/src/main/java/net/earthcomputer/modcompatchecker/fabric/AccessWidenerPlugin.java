@@ -49,10 +49,10 @@ public class AccessWidenerPlugin implements Plugin {
                 return;
             }
 
-            if (modJson.accessWidener != null) {
-                JarEntry accessWidenerEntry = modJar.getJarEntry(modJson.accessWidener);
+            if (modJson.accessWidener() != null) {
+                JarEntry accessWidenerEntry = modJar.getJarEntry(modJson.accessWidener());
                 if (accessWidenerEntry == null) {
-                    throw new IOException("Could not find specified access widener \"" + modJson.accessWidener + "\"");
+                    throw new IOException("Could not find specified access widener \"" + modJson.accessWidener() + "\"");
                 }
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(modJar.getInputStream(accessWidenerEntry), StandardCharsets.UTF_8))) {
                     doReadAccessWidener(config, reader);
